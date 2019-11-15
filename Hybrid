@@ -1,0 +1,109 @@
+def reward_function(params):
+    import math
+
+    #keep alphabetical
+    all_wheels_on_track = params['all_wheels_on_track']
+    closest_waypoints = params['closest_waypoints']
+    distance_from_center = params['distance_from_center']
+    heading = params['heading']
+    steering = abs(params['steering_angle'])
+    steps = params['steps']
+    progress = params['progress']
+    speed = params['speed']
+    steering = params['steering_angle']
+    track_width = params['track_width']
+    yaw = params['heading']
+    waypoints = params['waypoints']
+    x = params['x']
+    y = params['y']
+
+    #constants
+    ABS_STEERING_THRESHOLD = 15
+    SPEED_TRESHOLD = 1.0
+    TOTAL_NUM_STEPS = 85
+
+    reward = 1.0
+
+    if progress == 100:
+        reward += 100
+
+    # Calculate the direction of the center line based on the closest waypoints
+    next_point = waypoints[closest_waypoints[1]]
+    prev_point = waypoints[closest_waypoints[0]]
+    # Calculate the direction in radius, arctan2(dy, dx), the result is (-pi, pi) in radians
+    track_direction = math.atan2(next_point[1] - prev_point[1], next_point[0] - prev_point[0])
+    # Convert to degree
+    track_direction = math.degrees(track_direction)
+    # Calculate the difference between the track direction and the heading direction of the car
+    direction_diff = abs(track_direction - heading)
+    # Penalize the reward if the difference is too large
+    DIRECTION_THRESHOLD = 10.0
+
+    delta=1
+
+    if direction_diff > DIRECTION_THRESHOLD:
+        delta=1-(direction_diff/50)
+        if delta<0 or delta>1:
+            delta = 0
+        reward *= delta
+
+    # Calculate 3 markers that are at varying distances away from the center line
+    marker_0 = 0.05 * track_width
+    marker_1 = 0.1 * track_width
+    marker_2 = 0.25 * track_width
+    marker_3 = 0.5 * track_width
+
+    # Give higher reward if the car is closer to center line and vice versa
+    if distance_from_center <= marker_0:
+        reward += 15
+    elif distance_from_center <= marker_1:
+        reward += 10
+    elif distance_from_center <= marker_2:
+        reward += 5
+    elif distance_from_center <= marker_3:
+        reward += 1
+    else:
+        reward = 1e-3  # likely crashed/ close to off track
+
+    if not all_wheels_on_track:
+		# Penalize if the car goes off track
+        reward = 1e-3
+    elif speed < 2:
+		# Penalize if the car goes too slow
+        reward += 5
+    else:
+		# High reward if the car stays on track and goes fast
+        reward += 10
+
+    next_point = closest_waypoints[1]
+    len_maxpoints = len(waypoints)
+    future_waypoints = 3
+
+    sum_X = 0
+    sum_Y = 0
+    for i in range(next_point, next_point + future_waypoints,1):
+        w = waypoints[i % len_maxpoints] #use mod to avoid errors. Think about completing one full lap.
+        sum_X += w[0] #Getting X coordinate.
+        sum_Y += w[1] #Getting Y coordinate.
+
+    C_X = sum_X / future_waypoints
+    C_Y = sum_Y / future_waypoints
+
+    #Calculate the distance from the car to the next point
+    distance_next_point = math.hypot(x - C_X, y - C_Y)
+
+    #Calculate the predicted vehicle location considering the current steering angle.
+    P_X = x + (distance_next_point * math.cos(math.radians(steering)))
+    P_Y = y + (distance_next_point * math.sin(math.radians(steering)))
+
+    predicted_distance = math.hypot(C_X - P_X, C_Y - P_Y)
+
+    if predicted_distance <= marker_1: #vehicle is pointing to the right direction.
+        reward += 10
+    elif predicted_distance <= marker_2:
+        reward += 5
+    elif predicted_distance <= marker_3:
+        reward += 1
+    else:                      #vehicle is pointing to the wrong direction.
+        reward -= ((predicted_distance / (distance_next_point * 2)) * (speed / 2))
+    return float(reward)
